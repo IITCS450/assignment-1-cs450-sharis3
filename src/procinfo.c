@@ -7,8 +7,11 @@
 #include <unistd.h>
 #include "common.h"
 
+
 int read_cmdline(long pid, char **out);
 static int parse_pid(const char *s, long *pid_out);
+
+int read_vmrss_kb(long pid, long *vmrss_kb);
 static void usage(const char *a)
 {
     fprintf(stderr, "Usage: %s <pid>\n", a);
@@ -51,6 +54,10 @@ int main(int c, char **v)
     if (!read_cmdline(pid, &cmd)) {perror("read_cmdline"); return 1;}
     printf("DBG cmdline: %s\n", cmd);
     free(cmd);
+
+    long vmrss= 0;
+    if(!read_vmrss_kb(pid, &vmrss)) {perror("read_vmrss_kb");return 1;}
+    printf("DBG vmrss: %ld\n", vmrss );
 
     return 0;
 }
@@ -255,4 +262,36 @@ int read_cmdline(long pid, char **out) {
 
     *out = buf;
     return 1;
+}
+
+int read_vmrss_kb(long pid, long *vmrss_kb)
+{
+    char path[256];
+    snprintf(path, sizeof(path), "/proc/%ld/status", pid);
+
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;
+
+    char line[512];
+    long val = 0;
+    int found = 0;
+
+    while(fgets(line, sizeof(line), f )) {
+        if (strncmp(line, "VmRSS:", 6) == 0) {
+            char *p = line + 6;
+            while (*p && isspace((unsigned char)*p)) p++;
+
+            errno = 0;
+            val = strtol(p, NULL, 10);
+            if (errno == 0) found = 1;
+            break;
+        }
+    }
+
+    fclose(f);
+
+    if(!found) val = 0;
+    *vmrss_kb = val;
+    return 1;
+
 }
