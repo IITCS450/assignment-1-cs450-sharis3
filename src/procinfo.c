@@ -7,19 +7,20 @@
 #include <unistd.h>
 #include "common.h"
 
+int read_cmdline(long pid, char **out);
 static int parse_pid(const char *s, long *pid_out);
 static void usage(const char *a)
 {
     fprintf(stderr, "Usage: %s <pid>\n", a);
     exit(1);
 }
-static int isnum(const char *s)
-{
-    for (; *s; s++)
-        if (!isdigit(*s))
-            return 0;
-    return 1;
-}
+// static int isnum(const char *s)
+// {
+//     for (; *s; s++)
+//         if (!isdigit(*s))
+//             return 0;
+//     return 1;
+// }
 int read_stat_fields(long pid, char *state, long *ppid,
                      unsigned long long *utime, unsigned long long *stime);
 
@@ -27,7 +28,7 @@ int main(int c, char **v)
 {
     if (c != 2)
         usage(v[0]);
-    ;
+    
 
     long pid = 0;
     if (!parse_pid(v[1], &pid))
@@ -45,6 +46,11 @@ int main(int c, char **v)
     }
 
     printf("DBG parsed: state=%c ppid=%ld utime=%llu stime=%llu\n", st, ppid, ut, stt);
+
+    char *cmd = NULL;
+    if (!read_cmdline(pid, &cmd)) {perror("read_cmdline"); return 1;}
+    printf("DBG cmdline: %s\n", cmd);
+    free(cmd);
 
     return 0;
 }
@@ -184,5 +190,69 @@ int read_stat_fields(long pid, char *state, long *ppid,
     *utime = u;
     *stime = s;
 
+    return 1;
+}
+
+int read_cmdline(long pid, char **out) {
+
+    char path[256];
+    snprintf(path, sizeof(path), "/proc/%ld/cmdline", pid);
+
+    FILE *f = fopen(path, "rb");
+
+    if (!f) return 0;
+    size_t cap = 256, len = 0;
+    char *buf = malloc(cap);
+    if (!buf) {fclose(f); errno = ENOMEM; return 0;};
+
+
+    for (;;) {
+        if (len == cap) {
+            cap  *= 2;
+            char *nb = realloc(buf, cap);
+           
+            if (!nb) {fclose(f); errno = ENOMEM; return 0;};
+            buf = nb;
+        }
+        size_t n = fread(buf + len, 1, cap - len, f);
+        len += n;
+
+        if (n == 0) {
+            if (ferror(f)) { free(buf); fclose(f); errno = EIO; return 0;}
+            break;
+        } 
+    }
+    fclose(f);
+
+    if (len == 0) {
+        free(buf);
+        *out = strdup("[empty]");
+        if (!*out) {errno = ENOMEM; return 0;}
+        return 1;
+    }
+
+    for (size_t i = 0; i < len; i++) {
+        if (buf[i] == '\0') buf[i] = ' ';
+    }
+
+    char *nb = realloc(buf, len + 1);
+    if (!nb) {free(buf); errno = ENOMEM; return 0;}
+    buf = nb;
+
+    buf[len] = '\0';
+
+    while (len > 0 && buf[len - 1] == ' ') {
+        buf[len - 1] = '\0';
+        len --;
+    }
+
+    if (len == 0) {
+        free(buf);
+        *out = strdup("[empty]");
+        if (!*out) {errno = ENOMEM; return 0;}
+        return 1;
+    } 
+
+    *out = buf;
     return 1;
 }
