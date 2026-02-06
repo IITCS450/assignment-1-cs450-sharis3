@@ -48,17 +48,28 @@ int main(int c, char **v)
         return 1;
     }
 
-    printf("DBG parsed: state=%c ppid=%ld utime=%llu stime=%llu\n", st, ppid, ut, stt);
+   
 
     char *cmd = NULL;
     if (!read_cmdline(pid, &cmd)) {perror("read_cmdline"); return 1;}
-    printf("DBG cmdline: %s\n", cmd);
-    free(cmd);
+   
+
 
     long vmrss= 0;
-    if(!read_vmrss_kb(pid, &vmrss)) {perror("read_vmrss_kb");return 1;}
-    printf("DBG vmrss: %ld\n", vmrss );
+    if(!read_vmrss_kb(pid, &vmrss)) {perror("read_vmrss_kb"); free(cmd);return 1;}
 
+
+    long hz = sysconf(_SC_CLK_TCK);
+    double cpu = 0.0;
+    if (hz >0) cpu = (double)(ut + stt) / (double)hz;
+
+    printf("PID:%ld\n", pid);
+    printf("State:%c\n", st);
+    printf("PPID:%ld\n", ppid);
+    printf("Cmd:%s\n", cmd);
+    printf("CPU:%.3f\n", cpu);
+    printf("VmRSS:%ld\n", vmrss);
+    free(cmd);
     return 0;
 }
 
@@ -248,17 +259,17 @@ int read_cmdline(long pid, char **out) {
 
     buf[len] = '\0';
 
-    while (len > 0 && buf[len - 1] == ' ') {
-        buf[len - 1] = '\0';
-        len --;
-    }
+    
+    char *space = strchr(buf, ' ');
+    if (space) *space = '\0';
 
-    if (len == 0) {
+  
+    if (buf[0] == '\0') {
         free(buf);
         *out = strdup("[empty]");
-        if (!*out) {errno = ENOMEM; return 0;}
+        if (!*out) { errno = ENOMEM; return 0; }
         return 1;
-    } 
+    }   
 
     *out = buf;
     return 1;
